@@ -1,0 +1,4 @@
+tracks/
+__pycache__/
+*.pyc
+config.json
