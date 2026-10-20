@@ -1,5 +1,3 @@
-# PiCap-Pi3-Wav-multitouch-multison-V2
-
 # PiCap-Pi3-Wav-multitouch-multison V2
 
 Interface graphique pour configurer et déclencher des sons en simultané via les mesures des 12 électrodes capacitives du **PiCap Bare Conductive (MPR121)** sur **Raspberry Pi 3**, en fonction de plages de valeurs (intensité du contact).
