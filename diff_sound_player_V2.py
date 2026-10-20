@@ -27,6 +27,9 @@ Version améliorée (interaction + ergonomie) :
   - Bouton Test (▶) par électrode pour écouter un son sans toucher.
   - Sauvegarde rapide (config.json à côté du script), chargée au démarrage.
   - Barre d'état, auto-chargement, raccourci Espace = Play/Stop.
+  - Thème sombre avec zones visuellement séparées et colorées :
+    électrodes (cyan), seuils & config (orange), lecture (vert),
+    volume (bleu), fichiers (violet).
   - Config sauvegardée rétro-compatible avec l'ancien format.
   - Démarrage en PLEIN ÉCRAN kiosk (Échap = sortir, F11 = basculer).
   - CALIBRATION AUTOMATIQUE DU SILENCE au lancement : le niveau capacitif de
@@ -66,11 +69,31 @@ KIOSK_MODE = True                 # plein écran au démarrage (Échap pour sort
 CALIB_DURATION = 3.0              # secondes de calibration du silence
 CALIB_MARGIN = 2                  # marge de sécurité ajoutée au bruit mesuré
 
-COL_EVEN = "#eaf2fb"
-COL_ODD = "#fdf6e3"
-COL_ACTIVE = "#a5f2a5"
-COL_DISABLED = "#e4e4e4"
-COL_INVALID = "#f2a0a0"
+# --- Thème sombre : une couleur par zone -----------------------------------
+BG_ROOT = "#12121a"                  # fond général
+BG_ROW_EVEN = "#1d1d2c"              # lignes électrodes (alternées)
+BG_ROW_ODD = "#171722"
+BG_HEADER_S0 = "#26263c"             # en-têtes colonnes sons (alternés)
+BG_HEADER_S1 = "#1c1c2e"
+FG_MAIN = "#e6e6f0"                  # texte principal
+FG_MUTED = "#8f96ad"                 # texte secondaire
+
+ZONE_SEUILS = "#2a2015"              # orange  : seuils, répartition, calibration
+ACCENT_SEUILS = "#e8a33d"
+ZONE_LECTURE = "#14261a"             # vert    : play/stop, rejeu
+ACCENT_LECTURE = "#43c05a"
+ZONE_VOLUME = "#0f2230"              # bleu    : volume
+ACCENT_VOLUME = "#3fb7d8"
+ZONE_FICHIERS = "#221830"            # violet  : charger / sauver / reset
+ACCENT_FICHIERS = "#a48ad0"
+ACCENT_ELECTRODES = "#3fb7d8"        # cyan    : noms E, barres de niveau
+COL_DIFF = "#ffb454"                 # valeur diff en orange vif
+
+COL_EVEN = BG_ROW_EVEN               # couleur de base des cellules (lignes paires)
+COL_ODD = BG_ROW_ODD
+COL_ACTIVE = "#1f7a34"               # plage en cours (vert)
+COL_DISABLED = "#101018"             # min == max : désactivée
+COL_INVALID = "#8a3030"              # min > max (rouge)
 
 # ---------------------------------------------------------------------------
 # Capteur MPR121 (mode démo si indisponible)
@@ -130,6 +153,27 @@ class CapTouchApp:
         root.minsize(900, 480)
         if KIOSK_MODE:
             root.attributes("-fullscreen", True)
+
+        # --- thème sombre global -------------------------------------------
+        root.configure(bg=BG_ROOT)
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(".", background=BG_ROOT, foreground=FG_MAIN)
+        style.configure("TFrame", background=BG_ROOT)
+        style.configure("TLabel", background=BG_ROOT, foreground=FG_MAIN)
+        style.configure("TButton", background="#2b2b3e", foreground=FG_MAIN,
+                         borderwidth=0, focusthickness=0)
+        style.map("TButton", background=[("active", "#3d3d55")])
+        style.configure("TEntry", fieldbackground="#26263a", foreground=FG_MAIN,
+                        insertcolor=FG_MAIN, bordercolor="#3a3a52")
+        style.configure("TSpinbox", fieldbackground="#26263a", foreground=FG_MAIN,
+                        insertcolor=FG_MAIN, arrowcolor=FG_MAIN,
+                        bordercolor="#3a3a52", background="#2b2b3e",
+                        buttonbackground="#2b2b3e")
+        style.configure("Horizontal.TScrollbar", troughcolor="#1b1b28",
+                        background="#33334a", bordercolor=BG_ROOT,
+                        arrowcolor=FG_MAIN)
+        self.style = style
 
         # --- état ---------------------------------------------------------
         self.touch_var = tk.IntVar(value=DEFAULT_TOUCH_THRESHOLD)
@@ -200,71 +244,103 @@ class CapTouchApp:
 
     # ------------------------------------------------------------------ UI
     def _build_toolbar(self):
-        bar = ttk.Frame(self.root)
-        bar.pack(side="top", fill="x", padx=6, pady=6)
+        bar = tk.Frame(self.root, bg=BG_ROOT)
+        bar.pack(side="top", fill="x", padx=10, pady=(10, 2))
 
-        ttk.Label(bar, text="Touch:").pack(side="left")
-        ttk.Entry(bar, textvariable=self.touch_var, width=4).pack(side="left", padx=(2, 8))
+        row1 = tk.Frame(bar, bg=BG_ROOT)
+        row1.pack(side="top", fill="x")
+        row2 = tk.Frame(bar, bg=BG_ROOT)
+        row2.pack(side="top", fill="x", pady=(6, 2))
 
-        ttk.Label(bar, text="Release:").pack(side="left")
-        ttk.Entry(bar, textvariable=self.release_var, width=4).pack(side="left", padx=(2, 8))
+        def zone(parent, title, bg, accent):
+            z = tk.Frame(parent, bg=bg, padx=12, pady=7)
+            z.pack(side="left", fill="y", padx=(0, 10))
+            tk.Label(z, text=title, bg=bg, fg=accent,
+                     font=("TkDefaultFont", 8, "bold")).pack(side="top", anchor="w")
+            inner = tk.Frame(z, bg=bg)
+            inner.pack(side="top", anchor="w", pady=(4, 0))
+            return inner
 
-        ttk.Button(bar, text="Appliquer seuils", command=self.apply_thresholds
-                   ).pack(side="left", padx=(0, 8))
+        def mklabel(parent, text, bg, fg=FG_MAIN):
+            return tk.Label(parent, text=text, bg=bg, fg=fg)
 
-        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=6)
+        def mkentry(parent, var):
+            return tk.Entry(parent, textvariable=var, width=4, justify="center",
+                            bg="#26263a", fg=FG_MAIN, insertbackground=FG_MAIN,
+                            relief="flat", highlightthickness=1,
+                            highlightbackground="#3a3a52")
 
-        ttk.Label(bar, text="Volume:").pack(side="left")
-        vol = ttk.Scale(bar, from_=0, to=100, orient="horizontal",
-                        length=120, command=self.set_volume)
-        vol.set(100)
-        vol.pack(side="left", padx=(2, 2))
-        self.volume_label = ttk.Label(bar, text="100%")
-        self.volume_label.pack(side="left", padx=(0, 8))
+        def mkbtn(parent, text, cmd, bg, fg, bg_active, padx=8, bold=False):
+            font = ("TkDefaultFont", 10, "bold") if bold else "TkDefaultFont"
+            return tk.Button(parent, text=text, command=cmd, bd=0, relief="flat",
+                             bg=bg, fg=fg, activebackground=bg_active,
+                             activeforeground=fg, padx=padx, pady=3,
+                             cursor="hand2", font=font)
 
-        ttk.Label(bar, text="Rejeu (s):").pack(side="left")
-        ttk.Spinbox(bar, from_=0.1, to=10.0, increment=0.1, width=5,
-                    textvariable=self.retrigger_var).pack(side="left", padx=(2, 8))
+        # --- zone ORANGE : seuils & configuration -------------------------
+        seuils = zone(row1, "SEUILS / CONFIG", ZONE_SEUILS, ACCENT_SEUILS)
+        mklabel(seuils, "Touch:", ZONE_SEUILS).pack(side="left")
+        mkentry(seuils, self.touch_var).pack(side="left", padx=(3, 8))
+        mklabel(seuils, "Release:", ZONE_SEUILS).pack(side="left")
+        mkentry(seuils, self.release_var).pack(side="left", padx=(3, 8))
+        mkbtn(seuils, "Appliquer", self.apply_thresholds,
+              "#3d2f1c", "#ffcb7a", "#54401f").pack(side="left", padx=(0, 10))
+        mklabel(seuils, "Répartir jusqu'à:", ZONE_SEUILS).pack(side="left")
+        mkentry(seuils, self.spread_max_var).pack(side="left", padx=(3, 3))
+        mkbtn(seuils, "Répartir", self.spread_ranges,
+              "#3d2f1c", "#ffcb7a", "#54401f").pack(side="left", padx=(0, 10))
+        mkbtn(seuils, "Calibrer silence", self.start_calibration,
+              "#7a5a1e", "#ffe9bd", "#96722a").pack(side="left")
 
-        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=6)
+        # --- zone VERTE : lecture --------------------------------------------
+        lecture = zone(row1, "LECTURE", ZONE_LECTURE, ACCENT_LECTURE)
+        self.playstop_btn = mkbtn(lecture, "■ Stop", self.toggle_running,
+                                  "#b23a31", "#ffffff", "#d04c40",
+                                  padx=18, bold=True)
+        self.playstop_btn.pack(side="left", padx=(0, 12))
+        mklabel(lecture, "Rejeu (s):", ZONE_LECTURE).pack(side="left")
+        ttk.Spinbox(lecture, from_=0.1, to=10.0, increment=0.1, width=5,
+                    textvariable=self.retrigger_var).pack(side="left", padx=(3, 0))
 
-        ttk.Label(bar, text="Répartir jusqu'à:").pack(side="left")
-        ttk.Entry(bar, textvariable=self.spread_max_var, width=4).pack(side="left", padx=(2, 2))
-        ttk.Button(bar, text="Répartir les plages",
-                   command=self.spread_ranges).pack(side="left", padx=(0, 8))
+        # --- zone BLEUE : volume ---------------------------------------------
+        vol = zone(row2, "VOLUME", ZONE_VOLUME, ACCENT_VOLUME)
+        self.volume_scale = tk.Scale(vol, from_=0, to=100, orient="horizontal",
+                                     length=160, showvalue=0, bg=ZONE_VOLUME,
+                                     fg=FG_MAIN, troughcolor="#0a1822",
+                                     highlightthickness=0,
+                                     highlightbackground=ZONE_VOLUME,
+                                     activebackground=ACCENT_VOLUME,
+                                     command=self.set_volume)
+        self.volume_scale.set(100)
+        self.volume_scale.pack(side="left")
+        self.volume_label = mklabel(vol, "100%", ZONE_VOLUME, ACCENT_VOLUME)
+        self.volume_label.pack(side="left", padx=(8, 0))
 
-        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=6)
-
-        self.playstop_btn = tk.Button(bar, text="Stop", width=8,
-                                      bg="#f66", activebackground="#f99",
-                                      command=self.toggle_running)
-        self.playstop_btn.pack(side="left", padx=(0, 8))
-
-        ttk.Button(bar, text="Calibrer silence",
-                   command=self.start_calibration).pack(side="left", padx=(0, 8))
-
-        ttk.Button(bar, text="Réinitialiser", command=self.reset_all
-                   ).pack(side="left", padx=(0, 8))
-
-        ttk.Button(bar, text="Charger…", command=lambda: self.load_config(None)
-                   ).pack(side="left", padx=(0, 4))
-        ttk.Button(bar, text="Sauver", command=self.save_config
-                   ).pack(side="left", padx=(0, 4))
-        ttk.Button(bar, text="Sauver sous…", command=self.save_config_as
-                   ).pack(side="left", padx=(0, 4))
+        # --- zone VIOLETTE : fichiers -----------------------------------------
+        fichiers = zone(row2, "FICHIERS", ZONE_FICHIERS, ACCENT_FICHIERS)
+        for text, cmd in (("Charger…", lambda: self.load_config(None)),
+                          ("Sauver", self.save_config),
+                          ("Sauver sous…", self.save_config_as),
+                          ("Réinitialiser", self.reset_all)):
+            mkbtn(fichiers, text, cmd, "#322748", "#d8c9f5", "#443561"
+                  ).pack(side="left", padx=(0, 6))
 
     def _build_table(self):
-        container = ttk.Frame(self.root)
+        container = tk.Frame(self.root, bg=BG_ROOT)
         container.pack(side="top", fill="both", expand=True)
 
-        self.canvas = tk.Canvas(container, highlightthickness=0)
+        tk.Label(container, text="ÉLECTRODES", bg=BG_ROOT, fg=ACCENT_ELECTRODES,
+                 font=("TkDefaultFont", 9, "bold")
+                 ).pack(side="top", anchor="w", padx=14, pady=(8, 0))
+
+        self.canvas = tk.Canvas(container, highlightthickness=0, bg=BG_ROOT)
         hscroll = ttk.Scrollbar(container, orient="horizontal",
                                 command=self.canvas.xview)
         self.canvas.configure(xscrollcommand=hscroll.set)
         self.canvas.pack(side="top", fill="both", expand=True)
         hscroll.pack(side="bottom", fill="x")
 
-        frame = tk.Frame(self.canvas)
+        frame = tk.Frame(self.canvas, bg=BG_ROOT)
         self.canvas.create_window((0, 0), window=frame, anchor="nw")
         frame.bind("<Configure>",
                    lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
@@ -276,16 +352,16 @@ class CapTouchApp:
                              lambda e: self.canvas.xview_scroll(-2, "units"))
 
         # --- en-tête -------------------------------------------------------
-        tk.Label(frame, text="Test", width=5).grid(row=0, column=0, sticky="nsew")
-        tk.Label(frame, text="E", width=4).grid(row=0, column=1, sticky="nsew")
-        tk.Label(frame, text="Diff", width=5).grid(row=0, column=2, sticky="nsew")
-        tk.Label(frame, text="Niveau", width=14).grid(row=0, column=3, sticky="nsew")
+        for col, txt in ((0, "Test"), (1, "E"), (2, "Diff"), (3, "Niveau")):
+            tk.Label(frame, text=txt, width=5, bg="#101018", fg=FG_MUTED,
+                     font=("TkDefaultFont", 9, "bold")).grid(
+                         row=0, column=col, sticky="nsew")
         for i in range(NUM_SOUNDS):
-            bg = COL_EVEN if i % 2 == 0 else COL_ODD
-            tk.Label(frame, text=f"S{i}\nmin", bg=bg, width=4,
+            bg = BG_HEADER_S0 if i % 2 == 0 else BG_HEADER_S1
+            tk.Label(frame, text=f"S{i}\nmin", bg=bg, width=4, fg=FG_MAIN,
                      font=("TkDefaultFont", 9, "bold")).grid(
                          row=0, column=4 + 2 * i, sticky="nsew")
-            tk.Label(frame, text=f"S{i}\nmax", bg=bg, width=4,
+            tk.Label(frame, text=f"S{i}\nmax", bg=bg, width=4, fg=FG_MAIN,
                      font=("TkDefaultFont", 9, "bold")).grid(
                          row=0, column=5 + 2 * i, sticky="nsew")
 
@@ -293,16 +369,19 @@ class CapTouchApp:
         for e in range(NUM_ELECTRODES):
             row = e + 1
             color = COL_EVEN if e % 2 == 0 else COL_ODD
-            tk.Button(frame, text="▶", width=2, relief="flat",
+            tk.Button(frame, text="▶", width=2, relief="flat", bd=0,
+                      bg="#23232e", fg=ACCENT_VOLUME, activebackground="#3a3a52",
+                      activeforeground=ACCENT_VOLUME, cursor="hand2",
                       command=lambda e=e: self.test_electrode(e)
                       ).grid(row=row, column=0, sticky="nsew")
             tk.Label(frame, text=f"E{e}", width=4, bg=color,
+                     fg=ACCENT_ELECTRODES,
                      font=("TkDefaultFont", 9, "bold")).grid(
                          row=row, column=1, sticky="nsew")
             tk.Label(frame, textvariable=self.diff_labels[e], width=5,
-                     fg="#d00", bg=color).grid(row=row, column=2, sticky="nsew")
+                     fg=COL_DIFF, bg=color).grid(row=row, column=2, sticky="nsew")
 
-            bar = tk.Canvas(frame, width=96, height=16, bg="#cfd6dd",
+            bar = tk.Canvas(frame, width=96, height=16, bg="#0d0d15",
                             highlightthickness=0)
             bar.grid(row=row, column=3, sticky="nsew", padx=2, pady=2)
             self.bars.append(bar)
@@ -311,33 +390,42 @@ class CapTouchApp:
             for i in range(NUM_SOUNDS):
                 cmin, cmax = 4 + 2 * i, 5 + 2 * i
                 wmin = tk.Entry(frame, textvariable=self.plages[e][2 * i],
-                                width=4, justify="center", bg=color)
+                                width=4, justify="center", bg=color, fg=FG_MAIN,
+                                insertbackground=FG_MAIN, relief="flat",
+                                highlightthickness=1,
+                                highlightbackground="#31314a")
                 wmin.grid(row=row, column=cmin)
                 wmax = tk.Entry(frame, textvariable=self.plages[e][2 * i + 1],
-                                width=4, justify="center", bg=color)
+                                width=4, justify="center", bg=color, fg=FG_MAIN,
+                                insertbackground=FG_MAIN, relief="flat",
+                                highlightthickness=1,
+                                highlightbackground="#31314a")
                 wmax.grid(row=row, column=cmax)
                 self.entry_widgets[e][2 * i] = wmin
                 self.entry_widgets[e][2 * i + 1] = wmax
 
         # --- ligne « Sync » (une case par son) ------------------------------
-        tk.Label(frame, text="Sync", fg="#00a").grid(
+        tk.Label(frame, text="Sync", fg=FG_MUTED, bg=BG_ROOT).grid(
             row=NUM_ELECTRODES + 2, column=0, columnspan=4, sticky="e")
         for i in range(NUM_SOUNDS):
-            ttk.Checkbutton(frame, variable=self.sync_vars[i]
-                            ).grid(row=NUM_ELECTRODES + 2, column=4 + 2 * i,
-                                   columnspan=2, sticky="nsew")
+            tk.Checkbutton(frame, variable=self.sync_vars[i], bg=BG_ROOT,
+                           fg=FG_MAIN, selectcolor="#26263a",
+                           activebackground=BG_ROOT, activeforeground=FG_MAIN
+                           ).grid(row=NUM_ELECTRODES + 2, column=4 + 2 * i,
+                                  columnspan=2, sticky="nsew")
 
         # --- légende --------------------------------------------------------
         tk.Label(frame,
-                 text="vert = plage active   ·   gris = désactivée (min = max)   ·   "
+                 text="vert = plage active   ·   gris foncé = désactivée (min = max)   ·   "
                       "rouge = min > max   ·   Sync = copie min & max de la colonne "
                       "sur toutes les électrodes",
-                 fg="#555").grid(row=NUM_ELECTRODES + 3, column=0,
-                                 columnspan=4 + NUM_COLS, sticky="w", pady=(6, 0))
+                 fg=FG_MUTED, bg=BG_ROOT).grid(
+                     row=NUM_ELECTRODES + 3, column=0,
+                     columnspan=4 + NUM_COLS, sticky="w", pady=(6, 0))
 
     def _build_statusbar(self):
-        self.status_label = ttk.Label(self.root, text="", relief="sunken",
-                                      anchor="w", padding=(6, 2))
+        self.status_label = tk.Label(self.root, text="", bg="#0c0c13",
+                                     fg=FG_MUTED, anchor="w", padx=10, pady=3)
         self.status_label.pack(side="bottom", fill="x")
 
     def set_status(self, msg):
@@ -409,7 +497,7 @@ class CapTouchApp:
         bar = self.bars[e]
         w = max(20, bar.winfo_width())
         length = max(0, min(1.0, diff / float(DIFF_DISPLAY_MAX))) * (w - 2)
-        fill = COL_ACTIVE if self.active_range[e] is not None else "#4a7fd4"
+        fill = ACCENT_LECTURE if self.active_range[e] is not None else ACCENT_ELECTRODES
         if self.bar_rects[e] is None:
             self.bar_rects[e] = bar.create_rectangle(1, 1, 1 + length, 15, fill=fill)
         else:
@@ -439,10 +527,12 @@ class CapTouchApp:
     def toggle_running(self):
         self.running = not self.running
         if self.running:
-            self.playstop_btn.config(text="Stop", bg="#f66", activebackground="#f99")
+            self.playstop_btn.config(text="■ Stop", bg="#b23a31",
+                                     activebackground="#d04c40")
             self.set_status("Lecture : ON")
         else:
-            self.playstop_btn.config(text="Play", bg="#6c6", activebackground="#9c9")
+            self.playstop_btn.config(text="▶ Play", bg="#2e7d38",
+                                     activebackground="#3f9c4a")
             self.set_status("Lecture : OFF")
 
     # -------------------------------------------------- plein écran
