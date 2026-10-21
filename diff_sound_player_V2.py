@@ -96,7 +96,10 @@ COL_DISABLED = "#101018"             # min == max : désactivée
 COL_INVALID = "#8a3030"              # min > max (rouge)
 
 # ---------------------------------------------------------------------------
-# Capteur MPR121 (mode démo si indisponible)
+# Capteur MPR121 — module fourni par le paquet picap de Bare Conductive
+# (bibliothèque wiringpi-mpr121, installée au niveau du système) :
+# "import MPR121" le trouve automatiquement, comme dans les anciennes versions.
+# S'il est absent, l'application démarre en MODE DÉMO (sans crash).
 # ---------------------------------------------------------------------------
 sensor = None
 sensor_error = ""
