@@ -220,27 +220,25 @@ class CapTouchApp:
                     "write", lambda *_a, e=e, c=c: self._on_range_change(e, c))
 
         # raccourcis
-        root.bind("<space>", self._on_space)
-        root.bind("<Escape>", self._exit_fullscreen)
-        root.bind("<F11>", self._toggle_fullscreen)
+        root.bind_all("<space>", self._on_space)
+        root.bind_all("<Escape>", self._exit_fullscreen)
+        root.bind_all("<F11>", self._toggle_fullscreen)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.load_config(DEFAULT_CONFIG_FILE, quiet=True)
         self.set_volume(self.volume_var.get())
 
-        if not SENSOR_OK:
-            self.set_status(f"Mode démo — capteur indisponible : {sensor_error}")
-        else:
-            self.set_status(f"Capteur OK — {sounds_found} sons chargés."
-                            if sounds_found else
-                            "Capteur OK — aucun son trouvé dans ./tracks/E*/")
-
         self._poll()
         self.toggle_running()          # démarre en lecture
+
+        # NB : le message est placé APRÈS toggle_running pour ne pas être écrasé
         if SENSOR_OK:
             # calibration automatique du silence ~0,6 s après l'ouverture
             # (laisse le temps aux lignes I2C de se stabiliser)
             self.root.after(600, self.start_calibration)
+        else:
+            root.title("CapTouch Sound Mapper — MODE DÉMO (capteur indisponible)")
+            self.set_status(f"Mode démo — capteur indisponible : {sensor_error}")
 
     # ------------------------------------------------------------------ UI
     def _build_toolbar(self):
@@ -324,6 +322,8 @@ class CapTouchApp:
                           ("Réinitialiser", self.reset_all)):
             mkbtn(fichiers, text, cmd, "#322748", "#d8c9f5", "#443561"
                   ).pack(side="left", padx=(0, 6))
+        mkbtn(fichiers, "✕ Quitter", self.on_close,
+              "#7a2430", "#ffd9de", "#9a3040", padx=12).pack(side="left")
 
     def _build_table(self):
         container = tk.Frame(self.root, bg=BG_ROOT)
@@ -526,14 +526,15 @@ class CapTouchApp:
     # ------------------------------------------------------------- actions
     def toggle_running(self):
         self.running = not self.running
+        suffix = "   [MODE DÉMO]" if not SENSOR_OK else ""
         if self.running:
             self.playstop_btn.config(text="■ Stop", bg="#b23a31",
                                      activebackground="#d04c40")
-            self.set_status("Lecture : ON")
+            self.set_status("Lecture : ON" + suffix)
         else:
             self.playstop_btn.config(text="▶ Play", bg="#2e7d38",
                                      activebackground="#3f9c4a")
-            self.set_status("Lecture : OFF")
+            self.set_status("Lecture : OFF" + suffix)
 
     # -------------------------------------------------- plein écran
     def _toggle_fullscreen(self, _event=None):
